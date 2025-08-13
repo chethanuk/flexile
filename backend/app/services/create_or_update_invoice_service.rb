@@ -56,20 +56,6 @@ class CreateOrUpdateInvoiceService
       expenses_to_remove = existing_expenses - keep_expenses
       expenses_to_remove.each(&:mark_for_destruction)
 
-      # ---------------------------------------------------------------------
-      # Handle main-invoice PDF upload (distinct from expense attachments)
-      # ---------------------------------------------------------------------
-      if (uploaded_pdf = invoice_pdf_param)
-        unless uploaded_pdf.respond_to?(:content_type) && uploaded_pdf.content_type == "application/pdf"
-          error = "Only PDF files are allowed for the invoice attachment"
-          raise ActiveRecord::Rollback
-        end
-
-        # Replace any existing attachment **only** if we're attaching a new one
-        invoice.attachments.each(&:purge_later) if invoice.attachments.attached?
-        invoice.attachments.attach(uploaded_pdf)
-      end
-
       services_in_cents = invoice.total_amount_in_usd_cents - expenses_in_cents
       invoice_year = invoice.invoice_date.year
       equity_calculation_result = InvoiceEquityCalculator.new(
@@ -89,6 +75,13 @@ class CreateOrUpdateInvoiceService
       invoice.equity_amount_in_cents = equity_cents
       invoice.equity_amount_in_options = equity_options
       invoice.flexile_fee_cents = invoice.calculate_flexile_fee_cents
+
+      # Handle PDF upload after equity calculations but before saving
+      pdf_error = handle_pdf_upload
+      if pdf_error.present?
+        error = pdf_error
+        raise ActiveRecord::Rollback
+      end
 
       unless invoice.save
         error = invoice.errors.full_messages.to_sentence
@@ -128,6 +121,29 @@ class CreateOrUpdateInvoiceService
             .fetch(:invoice_expenses)
     end
 
+    # Handle PDF upload for the invoice
+    # @return [String, nil] Error message if validation fails, nil if successful
+    def handle_pdf_upload
+      uploaded_pdf = invoice_pdf_param
+      return nil unless uploaded_pdf # Skip if no PDF provided
+
+      # Validate content type
+      unless uploaded_pdf.respond_to?(:content_type) && uploaded_pdf.content_type == "application/pdf"
+        return "Only PDF files are allowed for the invoice attachment"
+      end
+
+      # Validate file size (2MB limit)
+      if uploaded_pdf.respond_to?(:size) && uploaded_pdf.size > 2.megabytes
+        return "PDF file size exceeds the 2MB limit"
+      end
+
+      # Replace any existing attachment
+      invoice.attachments.each(&:purge_later) if invoice.attachments.attached?
+      invoice.attachments.attach(uploaded_pdf)
+      
+      nil # No errors
+    end
+
     # Single PDF uploaded for the entire invoice (not for individual expenses)
     def invoice_pdf_param
       file = params.permit(:invoice_pdf)[:invoice_pdf]
@@ -135,7 +151,7 @@ class CreateOrUpdateInvoiceService
       # 1. Explicit nil check (fast-path)
       return nil if file.nil?
 
-      # 2. Respect Rails’ `blank?` when available
+      # 2. Respect Rails' `blank?` when available
       return nil if file.respond_to?(:blank?) && file.blank?
 
       # 3. Fallback for plain strings when `blank?` is unavailable

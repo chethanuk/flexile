@@ -71,6 +71,7 @@ end
 gem "faker", "~> 3.1"
 
 gem "prawn", "~> 2.5", require: false
+gem "prawn-table", "~> 0.2", require: false
 
 gem "httparty", "~> 0.21"
 

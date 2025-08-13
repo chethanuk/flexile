@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
+require "spec_helper"
+require_relative "../support/pdf_test_helpers"
+
 RSpec.describe CreateOrUpdateInvoiceService do
+  include PDFTestHelpers
+
   let(:company_administrator) { create(:company_administrator, company:) }
   let(:company) { create(:company) }
   let!(:expense_category) { create(:expense_category, company:) }
@@ -28,181 +33,361 @@ RSpec.describe CreateOrUpdateInvoiceService do
       ],
     }
   end
-  let(:sample_pdf_path) { Rails.root.join("spec/fixtures/files/sample.pdf") }
-  let(:invoice_service) { described_class.new(params:, user:, company:, contractor:, invoice:) }
   let!(:equity_grant) do
     create(:active_grant, company_investor: create(:company_investor, company:, user:),
                           share_price_usd: 2.34, year: Date.current.year)
   end
 
-  before { company.update!(equity_enabled: true) }
+  # Temporary files for cleanup
+  let(:temp_files) { [] }
+
+  before do
+    company.update!(equity_enabled: true)
+  end
+
+  after do
+    # Clean up any temporary files created during tests
+    temp_files.each do |file|
+      file.close
+      file.unlink
+    end
+  end
+
+  # Helper to create a PDF fixture and track for cleanup
+  def create_pdf_fixture(pdf_method, *args)
+    file = send(pdf_method, *args)
+    temp_files << file
+    pdf_fixture_upload(file)
+  end
+
+  # Shared examples for testing PDF upload scenarios
+  shared_examples "handles PDF upload correctly" do |scenario|
+    let(:invoice) { scenario[:existing_invoice] }
+    let(:base_params) { ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params }) }
+    
+    it "#{scenario[:description]}" do
+      # Setup PDF file based on scenario
+      pdf_file = if scenario[:pdf_file].is_a?(Symbol)
+                   create_pdf_fixture(scenario[:pdf_file], *scenario[:pdf_args])
+                 else
+                   scenario[:pdf_file]
+                 end
+      
+      # Setup params with PDF if provided
+      params_with_pdf = if pdf_file
+                          base_params.merge(invoice_pdf: pdf_file)
+                        else
+                          base_params
+                        end
+      
+      service = described_class.new(
+        params: params_with_pdf,
+        user: user,
+        company: company,
+        contractor: contractor,
+        invoice: invoice
+      )
+      
+      # Execute with expectations
+      expect do
+        result = service.process
+        
+        if scenario[:expected_success]
+          expect(result[:success]).to be(true), "Expected success but got error: #{result[:error_message]}"
+          
+          if scenario[:verify_attachment]
+            if scenario[:should_have_attachment]
+              expect(result[:invoice].attachment).to be_present, "Expected attachment to be present"
+              scenario[:attachment_expectations]&.each do |expectation|
+                instance_exec(result[:invoice].attachment, &expectation)
+              end
+            else
+              expect(result[:invoice].attachment).to be_nil, "Expected no attachment"
+            end
+          end
+        else
+          expect(result[:success]).to be(false), "Expected failure but got success"
+          expect(result[:error_message]).to eq(scenario[:expected_error])
+        end
+      end.to change { scenario[:change_expectation].call }
+    end
+  end
 
   describe "#process with PDF uploads" do
     context "when creating a new invoice" do
-      let(:invoice) { nil }
-      let(:params) { ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params }) }
+      # Define test scenarios for parametrized tests
+      invoice_creation_scenarios = [
+        {
+          description: "creates an invoice without a PDF attachment when no PDF is provided",
+          existing_invoice: nil,
+          pdf_file: nil,
+          expected_success: true,
+          should_have_attachment: false,
+          verify_attachment: true,
+          change_expectation: -> { expect(user.invoices).to change { user.invoices.count }.by(1) }
+        },
+        {
+          description: "creates an invoice with a standard invoice PDF",
+          existing_invoice: nil,
+          pdf_file: :create_invoice_pdf,
+          pdf_args: [],
+          expected_success: true,
+          should_have_attachment: true,
+          verify_attachment: true,
+          attachment_expectations: [
+            ->(attachment) { expect(attachment.content_type).to eq("application/pdf") },
+            ->(attachment) { expect(valid_pdf?(attachment.blob)).to be true }
+          ],
+          change_expectation: -> { 
+            expect(user.invoices).to change { user.invoices.count }.by(1)
+            .and change { ActiveStorage::Attachment.count }.by(1) 
+          }
+        },
+        {
+          description: "creates an invoice with a minimal empty PDF",
+          existing_invoice: nil,
+          pdf_file: :create_empty_pdf,
+          pdf_args: [],
+          expected_success: true,
+          should_have_attachment: true,
+          verify_attachment: true,
+          attachment_expectations: [
+            ->(attachment) { expect(attachment.content_type).to eq("application/pdf") }
+          ],
+          change_expectation: -> { 
+            expect(user.invoices).to change { user.invoices.count }.by(1)
+            .and change { ActiveStorage::Attachment.count }.by(1) 
+          }
+        },
+        {
+          description: "rejects non-PDF files with PDF extension",
+          existing_invoice: nil,
+          pdf_file: :create_fake_pdf,
+          pdf_args: [],
+          expected_success: false,
+          expected_error: "Only PDF files are allowed for the invoice attachment",
+          change_expectation: -> { expect(user.invoices).not_to change { user.invoices.count } }
+        },
+        {
+          description: "handles zero-byte PDF files gracefully",
+          existing_invoice: nil,
+          pdf_file: :create_zero_byte_pdf,
+          pdf_args: [],
+          expected_success: true,
+          should_have_attachment: false, # Zero-byte files are ignored
+          verify_attachment: true,
+          change_expectation: -> { 
+            expect(user.invoices).to change { user.invoices.count }.by(1)
+            .and not_change { ActiveStorage::Attachment.count } 
+          }
+        },
+        {
+          description: "handles large PDF files correctly (under 2MB limit)",
+          existing_invoice: nil,
+          pdf_file: :create_large_pdf,
+          pdf_args: [1.5], # 1.5MB PDF
+          expected_success: true,
+          should_have_attachment: true,
+          verify_attachment: true,
+          attachment_expectations: [
+            ->(attachment) { expect(attachment.content_type).to eq("application/pdf") },
+            ->(attachment) { expect(attachment.byte_size).to be > 500_000 } # Should be significantly large
+          ],
+          change_expectation: -> { 
+            expect(user.invoices).to change { user.invoices.count }.by(1)
+            .and change { ActiveStorage::Attachment.count }.by(1) 
+          }
+        },
+        {
+          description: "rejects PDF files exceeding the 2MB limit",
+          existing_invoice: nil,
+          pdf_file: :create_large_pdf,
+          pdf_args: [2.5], # 2.5MB PDF (exceeds 2MB limit)
+          expected_success: false,
+          expected_error: "PDF file size exceeds the 2MB limit",
+          change_expectation: -> { expect(user.invoices).not_to change { user.invoices.count } }
+        },
+        {
+          description: "rejects corrupted PDF files",
+          existing_invoice: nil,
+          pdf_file: :create_corrupted_pdf,
+          pdf_args: [],
+          expected_success: false,
+          expected_error: "Only PDF files are allowed for the invoice attachment",
+          change_expectation: -> { expect(user.invoices).not_to change { user.invoices.count } }
+        }
+      ]
 
-      it "creates an invoice without a PDF attachment when no PDF is provided" do
-        expect do
-          result = invoice_service.process
-          expect(result[:success]).to be(true)
-          expect(result[:invoice].attachment).to be_nil
-        end.to change { user.invoices.count }.by(1)
-      end
-
-      it "creates an invoice with a PDF attachment when a valid PDF is provided" do
-        pdf_file = fixture_file_upload(sample_pdf_path, "application/pdf")
-        params_with_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, invoice_pdf: pdf_file })
-        service = described_class.new(params: params_with_pdf, user:, company:, contractor:, invoice:)
-
-        expect do
-          result = service.process
-          expect(result[:success]).to be(true)
-          expect(result[:invoice].attachment).to be_present
-          expect(result[:invoice].attachment.filename.to_s).to eq("sample.pdf")
-          expect(result[:invoice].attachment.content_type).to eq("application/pdf")
-        end.to change { user.invoices.count }.by(1)
-          .and change { ActiveStorage::Attachment.count }.by(1)
-      end
-
-      it "rejects non-PDF files" do
-        non_pdf_file = fixture_file_upload(sample_pdf_path, "image/jpeg")
-        params_with_non_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, invoice_pdf: non_pdf_file })
-        service = described_class.new(params: params_with_non_pdf, user:, company:, contractor:, invoice:)
-
-        expect do
-          result = service.process
-          expect(result[:success]).to be(false)
-          expect(result[:error_message]).to eq("Only PDF files are allowed for the invoice attachment")
-        end.not_to change { user.invoices.count }
-      end
-
-      it "handles empty file uploads gracefully" do
-        empty_file = fixture_file_upload(Rails.root.join("spec/fixtures/files/empty.pdf"), "application/pdf")
-        allow(File).to receive(:size).with(empty_file.path).and_return(0)
-        
-        params_with_empty_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, invoice_pdf: empty_file })
-        service = described_class.new(params: params_with_empty_pdf, user:, company:, contractor:, invoice:)
-
-        expect do
-          result = service.process
-          expect(result[:success]).to be(true)
-          expect(result[:invoice].attachment).to be_present
-          expect(result[:invoice].attachment.byte_size).to eq(0)
-        end.to change { user.invoices.count }.by(1)
+      # Run all scenarios
+      invoice_creation_scenarios.each do |scenario|
+        include_examples "handles PDF upload correctly", scenario
       end
     end
 
     context "when updating an existing invoice" do
-      let(:invoice) { create(:invoice, company:, user:, company_worker: contractor) }
-      let(:params) { ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params }) }
-
-      it "replaces an existing PDF with a new one" do
-        # First attach an initial PDF
-        initial_pdf = fixture_file_upload(sample_pdf_path, "application/pdf")
-        invoice.attachments.attach(initial_pdf)
-        invoice.save!
-        
-        initial_attachment_id = invoice.attachment.id
-        
-        # Now update with a new PDF
-        new_pdf = fixture_file_upload(sample_pdf_path, "application/pdf")
-        params_with_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, invoice_pdf: new_pdf })
-        service = described_class.new(params: params_with_pdf, user:, company:, contractor:, invoice:)
-
-        expect do
-          result = service.process
-          expect(result[:success]).to be(true)
-          invoice.reload
-          expect(invoice.attachment).to be_present
-          expect(invoice.attachment.id).not_to eq(initial_attachment_id)
-        end.to change { ActiveStorage::Attachment.count }.by(0) # One is purged, one is added
+      let(:existing_invoice) { create(:invoice, company:, user:, company_worker: contractor) }
+      let(:with_initial_pdf) do
+        pdf = create_invoice_pdf
+        temp_files << pdf
+        existing_invoice.attachments.attach(pdf_fixture_upload(pdf))
+        existing_invoice.save!
+        existing_invoice
       end
 
-      it "removes the PDF when updating without providing a new one" do
-        # First attach an initial PDF
-        initial_pdf = fixture_file_upload(sample_pdf_path, "application/pdf")
-        invoice.attachments.attach(initial_pdf)
-        invoice.save!
+      # Define test scenarios for parametrized tests
+      invoice_update_scenarios = [
+        {
+          description: "replaces an existing PDF with a new one",
+          existing_invoice: -> { with_initial_pdf },
+          pdf_file: :create_invoice_pdf,
+          pdf_args: [{ title: "REPLACEMENT INVOICE" }],
+          expected_success: true,
+          should_have_attachment: true,
+          verify_attachment: true,
+          attachment_expectations: [
+            ->(attachment) { 
+              expect(attachment.content_type).to eq("application/pdf")
+              expect(pdf_contains_text?(attachment.blob, "REPLACEMENT INVOICE")).to be true
+            }
+          ],
+          change_expectation: -> { 
+            initial_id = with_initial_pdf.attachment.id
+            expect { with_initial_pdf.reload }.to change { with_initial_pdf.attachment.id }.from(initial_id)
+          }
+        },
+        {
+          description: "keeps existing PDF when updating without providing a new one",
+          existing_invoice: -> { with_initial_pdf },
+          pdf_file: nil,
+          expected_success: true,
+          should_have_attachment: true,
+          verify_attachment: true,
+          attachment_expectations: [
+            ->(attachment) { expect(attachment.id).to eq(with_initial_pdf.attachment.id) }
+          ],
+          change_expectation: -> { expect(ActiveStorage::Attachment.count).not_to change }
+        },
+        {
+          description: "rejects non-PDF files when updating",
+          existing_invoice: -> { existing_invoice },
+          pdf_file: :create_fake_pdf,
+          pdf_args: [],
+          expected_success: false,
+          expected_error: "Only PDF files are allowed for the invoice attachment",
+          change_expectation: -> { expect(ActiveStorage::Attachment.count).not_to change }
+        },
+        {
+          description: "rejects oversized PDF files when updating",
+          existing_invoice: -> { existing_invoice },
+          pdf_file: :create_large_pdf,
+          pdf_args: [2.5], # 2.5MB PDF (exceeds 2MB limit)
+          expected_success: false,
+          expected_error: "PDF file size exceeds the 2MB limit",
+          change_expectation: -> { expect(ActiveStorage::Attachment.count).not_to change }
+        }
+      ]
+
+      # Run all scenarios
+      invoice_update_scenarios.each do |scenario|
+        # Handle dynamic invoice setup
+        if scenario[:existing_invoice].respond_to?(:call)
+          let(:invoice) { instance_eval(&scenario[:existing_invoice]) }
+        else
+          let(:invoice) { scenario[:existing_invoice] }
+        end
         
-        # Now update without a PDF
-        expect do
-          result = invoice_service.process
-          expect(result[:success]).to be(true)
-          # The attachment should still be there since we're not explicitly removing it
-          invoice.reload
-          expect(invoice.attachment).to be_present
-        end.not_to change { ActiveStorage::Attachment.count }
+        include_examples "handles PDF upload correctly", scenario
       end
     end
 
     context "with expense attachments" do
       let(:invoice) { nil }
-      let(:expense_params) do
-        {
+      
+      it "handles both invoice PDF and expense attachments correctly" do
+        # Create PDFs for invoice and expense
+        invoice_pdf = create_invoice_pdf
+        expense_pdf = create_invoice_pdf(title: "EXPENSE")
+        temp_files.concat([invoice_pdf, expense_pdf])
+        
+        expense_params = {
           invoice_expenses: [
             {
               description: "Office supplies",
               expense_category_id: expense_category.id,
               total_amount_in_cents: 2500,
-              attachment: fixture_file_upload(sample_pdf_path, "application/pdf")
+              attachment: pdf_fixture_upload(expense_pdf)
             }
           ]
         }
-      end
-      let(:params) { ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, **expense_params }) }
-
-      it "handles both invoice PDF and expense attachments correctly" do
-        invoice_pdf = fixture_file_upload(sample_pdf_path, "application/pdf")
-        params_with_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, **expense_params, invoice_pdf: invoice_pdf })
-        service = described_class.new(params: params_with_pdf, user:, company:, contractor:, invoice:)
-
+        
+        params = ActionController::Parameters.new({
+          **invoice_params,
+          **invoice_line_item_params,
+          **expense_params,
+          invoice_pdf: pdf_fixture_upload(invoice_pdf)
+        })
+        
+        service = described_class.new(
+          params: params,
+          user: user,
+          company: company,
+          contractor: contractor,
+          invoice: invoice
+        )
+        
         expect do
           result = service.process
           expect(result[:success]).to be(true)
           
           # Check invoice attachment
           expect(result[:invoice].attachment).to be_present
-          expect(result[:invoice].attachment.filename.to_s).to eq("sample.pdf")
+          expect(result[:invoice].attachment.content_type).to eq("application/pdf")
           
           # Check expense attachment
           expect(result[:invoice].invoice_expenses.first.attachment).to be_present
-          expect(result[:invoice].invoice_expenses.first.attachment.filename.to_s).to eq("sample.pdf")
+          expect(result[:invoice].invoice_expenses.first.attachment.content_type).to eq("application/pdf")
         end.to change { ActiveStorage::Attachment.count }.by(2) # One for invoice, one for expense
       end
     end
 
     context "with edge cases" do
-      let(:invoice) { nil }
-      let(:params) { ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params }) }
+      # Define edge case scenarios
+      edge_case_scenarios = [
+        {
+          description: "handles nil PDF parameter gracefully",
+          existing_invoice: nil,
+          pdf_file: nil,
+          expected_success: true,
+          should_have_attachment: false,
+          verify_attachment: true,
+          change_expectation: -> { 
+            expect(user.invoices).to change { user.invoices.count }.by(1)
+            .and not_change { ActiveStorage::Attachment.count } 
+          }
+        },
+        {
+          description: "handles empty string as PDF parameter gracefully",
+          existing_invoice: nil,
+          pdf_file: "",
+          expected_success: true,
+          should_have_attachment: false,
+          verify_attachment: true,
+          change_expectation: -> { 
+            expect(user.invoices).to change { user.invoices.count }.by(1)
+            .and not_change { ActiveStorage::Attachment.count } 
+          }
+        }
+      ]
 
-      it "handles large PDFs correctly" do
-        # Mock a large file
-        large_pdf = fixture_file_upload(sample_pdf_path, "application/pdf")
-        allow(File).to receive(:size).with(large_pdf.path).and_return(10.megabytes)
-        
-        params_with_large_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, invoice_pdf: large_pdf })
-        service = described_class.new(params: params_with_large_pdf, user:, company:, contractor:, invoice:)
-
-        expect do
-          result = service.process
-          expect(result[:success]).to be(true)
-          expect(result[:invoice].attachment).to be_present
-        end.to change { user.invoices.count }.by(1)
-          .and change { ActiveStorage::Attachment.count }.by(1)
-      end
-
-      it "handles nil PDF parameter gracefully" do
-        params_with_nil_pdf = ActionController::Parameters.new({ **invoice_params, **invoice_line_item_params, invoice_pdf: nil })
-        service = described_class.new(params: params_with_nil_pdf, user:, company:, contractor:, invoice:)
-
-        expect do
-          result = service.process
-          expect(result[:success]).to be(true)
-          expect(result[:invoice].attachment).to be_nil
-        end.to change { user.invoices.count }.by(1)
-          .and not_change { ActiveStorage::Attachment.count }
+      # Run all edge case scenarios
+      edge_case_scenarios.each do |scenario|
+        include_examples "handles PDF upload correctly", scenario
       end
     end
+  end
+
+  # Helper to test if something doesn't change
+  def not_change(&block)
+    expect { yield }.not_to change(&block)
   end
 end
