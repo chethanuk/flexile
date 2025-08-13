@@ -56,7 +56,19 @@ class CreateOrUpdateInvoiceService
       expenses_to_remove = existing_expenses - keep_expenses
       expenses_to_remove.each(&:mark_for_destruction)
 
-      invoice.attachments.each(&:purge_later)
+      # ---------------------------------------------------------------------
+      # Handle main-invoice PDF upload (distinct from expense attachments)
+      # ---------------------------------------------------------------------
+      if (uploaded_pdf = invoice_pdf_param)
+        unless uploaded_pdf.respond_to?(:content_type) && uploaded_pdf.content_type == "application/pdf"
+          error = "Only PDF files are allowed for the invoice attachment"
+          raise ActiveRecord::Rollback
+        end
+
+        # Replace any existing attachment **only** if we're attaching a new one
+        invoice.attachments.each(&:purge_later) if invoice.attachments.attached?
+        invoice.attachments.attach(uploaded_pdf)
+      end
 
       services_in_cents = invoice.total_amount_in_usd_cents - expenses_in_cents
       invoice_year = invoice.invoice_date.year
@@ -114,5 +126,24 @@ class CreateOrUpdateInvoiceService
 
       params.permit(invoice_expenses: [:id, :description, :expense_category_id, :total_amount_in_cents, :attachment])
             .fetch(:invoice_expenses)
+    end
+
+    # Single PDF uploaded for the entire invoice (not for individual expenses)
+    def invoice_pdf_param
+      file = params.permit(:invoice_pdf)[:invoice_pdf]
+
+      # 1. Explicit nil check (fast-path)
+      return nil if file.nil?
+
+      # 2. Respect Rails’ `blank?` when available
+      return nil if file.respond_to?(:blank?) && file.blank?
+
+      # 3. Fallback for plain strings when `blank?` is unavailable
+      return nil if file.is_a?(String) && file.strip.empty?
+
+      # 4. Ignore zero-byte uploads
+      return nil if file.respond_to?(:size) && file.size.to_i.zero?
+
+      file
     end
 end

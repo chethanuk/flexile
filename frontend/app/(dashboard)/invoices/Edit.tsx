@@ -85,6 +85,12 @@ const dataSchema = z.object({
         attachment: z.object({ name: z.string(), url: z.string() }),
       }),
     ),
+    attachment: z
+      .object({
+        name: z.string(),
+        url: z.string(),
+      })
+      .nullable()
   }),
 });
 type Data = z.infer<typeof dataSchema>;
@@ -139,6 +145,11 @@ const Edit = () => {
   });
   const [showExpenses, setShowExpenses] = useState(false);
   const uploadExpenseRef = useRef<HTMLInputElement>(null);
+  // --- NEW: main-invoice PDF upload refs / state ---------------------------
+  const uploadInvoiceRef = useRef<HTMLInputElement>(null);
+  const [invoicePdf, setInvoicePdf] = useState<File | null>(null);
+  const [invoicePdfError, setInvoicePdfError] = useState<string | null>(null);
+  const existingAttachment = data.invoice.attachment ?? null;
   const [expenses, setExpenses] = useState(List<InvoiceFormExpense>(data.invoice.expenses));
   const showExpensesTable = showExpenses || expenses.size > 0;
 
@@ -177,6 +188,10 @@ const Edit = () => {
         if (expense.blob) {
           formData.append("invoice_expenses[][attachment]", expense.blob);
         }
+      }
+      // attach main invoice PDF
+      if (invoicePdf) {
+        formData.append("invoice_pdf", invoicePdf);
       }
       if (notes.length) formData.append("invoice[notes]", notes);
 
@@ -324,6 +339,55 @@ const Edit = () => {
                 aria-invalid={errorField === "issueDate"}
                 label="Invoice date"
                 granularity="day"
+              />
+            </div>
+            {/* -------- Invoice PDF upload -------- */}
+            <div className="flex flex-col gap-2">
+              <Label>Invoice PDF</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={() => uploadInvoiceRef.current?.click()}
+                >
+                  <ArrowUpTrayIcon className="size-4" />
+                  {invoicePdf
+                    ? "Replace PDF"
+                    : existingAttachment
+                      ? "Replace PDF"
+                      : "Upload PDF"}
+                </Button>
+                {invoicePdf ? (
+                  <span className="truncate max-w-40 text-sm">{invoicePdf.name}</span>
+                ) : existingAttachment ? (
+                  <Link
+                    href={existingAttachment.url}
+                    download
+                    className="truncate max-w-40 text-sm text-blue-600 hover:underline"
+                  >
+                    {existingAttachment.name}
+                  </Link>
+                ) : null}
+              </div>
+              {invoicePdfError ? (
+                <span className="text-red-600 text-sm">{invoicePdfError}</span>
+              ) : null}
+              <input
+                ref={uploadInvoiceRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.type !== "application/pdf") {
+                    setInvoicePdfError("Only PDF files are allowed");
+                    setInvoicePdf(null);
+                    return;
+                  }
+                  setInvoicePdfError(null);
+                  setInvoicePdf(file);
+                }}
               />
             </div>
           </div>
