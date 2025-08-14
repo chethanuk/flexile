@@ -136,17 +136,9 @@ export default [
       "frontend/drizzle.config.js",
       "playwright.config.ts",
       "docker/createCertificate.js",
-      "jest.polyfills.js",
-      "jest.config.cjs",
-      "jest.setup.js",
-      "__mocks__/**/*.js",
     ],
     languageOptions: {
-      globals: { ...globals.node, ...globals.jest },
-    },
-    rules: {
-      "no-console": "off",
-      "logical-assignment-operators": "off",
+      globals: globals.node,
     },
     extends: [tseslint.configs.base, tseslint.configs.disableTypeChecked],
   }),

@@ -46,28 +46,23 @@ RSpec.describe WiseRecipient do
     include_examples "uniqueness of used_for_*", :used_for_dividends
   end
 
-  # Updated to use Wise API mocks instead of VCR cassettes. The :wise_mock
-  # tag activates the WiseMocks helpers defined in spec/support/wise_mocks.rb,
-  # stubbing all external HTTP calls to the Wise sandbox. This makes the test
-  # run faster and removes the need for real API credentials or prerecorded
-  # responses.
-  context "#details", :wise_mock do
-    it "returns details of Wise API recipient using mocked Wise API" do
+  context "#details", :vcr do
+    it "returns details of Wise API recipient" do
       recipient = create(:wise_recipient)
 
       expect(recipient.details).to eq({
         "BIC" => nil,
         "IBAN" => nil,
-        "abartn" => nil,
-        "accountHolderName" => "Test Recipient",
-        "accountNumber" => "1234567890",
-        "accountType" => "CHECKING",
-        :"address.city" => "New York",
+        "abartn" => "026009593",
+        "accountHolderName" => "John Banker",
+        "accountNumber" => "87654321",
+        "accountType" => "SAVINGS",
+        :"address.city" => "Tallahassee",
         :"address.country" => "US",
         :"address.countryCode" => "US",
-        :"address.firstLine" => "456 Test Ave",
-        :"address.postCode" => "54321",
-        :"address.state" => "NY",
+        :"address.firstLine" => "1234 Orange Street",
+        :"address.postCode" => "32308",
+        :"address.state" => "HI",
         "bankCode" => nil,
         "bankName" => nil,
         "bankgiroNumber" => nil,
@@ -109,10 +104,10 @@ RSpec.describe WiseRecipient do
         "prefix" => nil,
         "province" => nil,
         "pspReference" => nil,
-        "routingNumber" => "021000021",
+        "routingNumber" => nil,
         "russiaRegion" => nil,
         "rut" => nil,
-        "sortCode" => "111222",
+        "sortCode" => nil,
         "swiftCode" => nil,
         "targetProfile" => nil,
         "targetUserId" => nil,

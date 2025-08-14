@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe CompanyStripeAccount do
-  # Using StripeMockHelpers instead of StripeHelpers for mocking
-  # StripeMockHelpers provides deterministic test data without requiring real API calls
-  include StripeMockHelpers
+  include StripeHelpers
 
   describe "associations" do
     it { is_expected.to belong_to(:company) }
@@ -63,19 +61,12 @@ RSpec.describe CompanyStripeAccount do
     end
   end
 
-  # Removed :vcr tag and updated to use StripeMockHelpers instead of real API calls
-  describe "#fetch_stripe_bank_account_last_four" do
-    let(:company_stripe_account) { create(:company_stripe_account, setup_intent_id: "seti_mock_succeeded") }
+  describe "#fetch_stripe_bank_account_last_four", :vcr do
+    let(:setup_intent_id) { "seti_1LS2aCFSsGLfTpetJF5ZbTzr" }
+    let(:company_stripe_account) { create(:company_stripe_account, setup_intent_id:) }
 
     context "when the company stripe account has a setup intent with a payment method" do
-      before do
-        # Use our mock helper to create a setup intent with a payment method
-        setup_intent = create_mock_setup_intent(status: "succeeded")
-        allow(Stripe::SetupIntent).to receive(:retrieve).and_return(setup_intent)
-      end
-
       it "fetches the last four digits of the bank account from Stripe" do
-        # The mock data in StripeMockHelpers has "6789" as the last4 for us_bank_account
         expect(company_stripe_account.fetch_stripe_bank_account_last_four).to eq "6789"
       end
     end
@@ -83,10 +74,10 @@ RSpec.describe CompanyStripeAccount do
     context "when the company stripe account has a setup intent with no payment method attached" do
       it "returns nil when there is no payment method associated with the setup intent" do
         allow(Stripe::SetupIntent).to receive(:retrieve).with({
-          id: company_stripe_account.setup_intent_id,
+          id: setup_intent_id,
           expand: ["payment_method"],
         }).and_return(Stripe::SetupIntent.construct_from({
-          id: company_stripe_account.setup_intent_id,
+          id: setup_intent_id,
           payment_method: nil,
         }))
 
@@ -171,29 +162,18 @@ RSpec.describe CompanyStripeAccount do
     end
   end
 
-  # Removed :vcr tag and updated to use StripeMockHelpers instead of real API calls
-  describe "#microdeposit_verification_details" do
+  describe "#microdeposit_verification_details", :vcr  do
     let(:company_stripe_account) { create(:company_stripe_account, :action_required, bank_account_last_four: "1234") }
 
     context "when microdeposit verification is required" do
-      before do
-        # Use our mock helper to set up a company with a setup intent requiring microdeposits
-        # The setup_company_on_stripe helper now uses our StripeMockHelpers
-        setup_company_on_stripe(company_stripe_account.company.reload, verify_with_microdeposits: true)
-      end
+      before { setup_company_on_stripe(company_stripe_account.company.reload, verify_with_microdeposits: true) }
 
       it "returns the arrival timestamp, microdeposit type, and bank account number" do
-        # The mock data in StripeMockHelpers has a dynamic arrival_date (Time.now + 2.days)
-        # and "descriptor_code" as the microdeposit_type
-        verification_details = company_stripe_account.reload.microdeposit_verification_details
-
-        expect(verification_details[:microdeposit_type]).to eq("descriptor_code")
-        expect(verification_details[:bank_account_number]).to eq("****1234")
-        expect(verification_details[:arrival_timestamp]).to be_present
-
-        # The timestamp should be approximately 2 days from now (within 5 seconds)
-        expected_timestamp = Time.now.to_i + 2.days.to_i
-        expect(verification_details[:arrival_timestamp]).to be_within(5).of(expected_timestamp)
+        expect(company_stripe_account.reload.microdeposit_verification_details).to eq({
+          arrival_timestamp: 1723186800, # see VCR cassette
+          microdeposit_type: "descriptor_code",
+          bank_account_number: "****1234",
+        })
       end
     end
 
