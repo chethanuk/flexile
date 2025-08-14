@@ -124,9 +124,21 @@ module StripeMockHelpers
     when "requires_confirmation"
       Stripe::SetupIntent.construct_from(STRIPE_TEST_DATA[:setup_intents][:requires_confirmation])
     when "requires_action"
-      Stripe::SetupIntent.construct_from(STRIPE_TEST_DATA[:setup_intents][:requires_action])
+      # Create a fresh copy and set a dynamic arrival_date close to now + 2 days
+      base = STRIPE_TEST_DATA[:setup_intents][:requires_action]
+      intent_hash = base.dup
+      intent_hash[:next_action] = base[:next_action].dup
+      intent_hash[:next_action][:verify_with_microdeposits] = base[:next_action][:verify_with_microdeposits].dup
+      intent_hash[:next_action][:verify_with_microdeposits][:arrival_date] = Time.now.to_i + 2.days.to_i
+      Stripe::SetupIntent.construct_from(intent_hash)
     when "succeeded"
-      Stripe::SetupIntent.construct_from(STRIPE_TEST_DATA[:setup_intents][:succeeded])
+      # Return a setup intent with an expanded payment_method object so model code
+      # can access nested fields like `us_bank_account.last4`
+      succeeded_intent = STRIPE_TEST_DATA[:setup_intents][:succeeded].dup
+      succeeded_intent[:payment_method] = Stripe::PaymentMethod.construct_from(
+        STRIPE_TEST_DATA[:payment_methods][:us_bank_account]
+      )
+      Stripe::SetupIntent.construct_from(succeeded_intent)
     else
       raise ArgumentError, "Unknown setup intent status: #{status}"
     end
@@ -174,7 +186,7 @@ module StripeMockHelpers
 
   # Helper to simulate bank account setup for a company
   def setup_company_on_stripe(company, verify_with_microdeposits: false)
-    return unless company.company_stripe_account
+    return unless company.bank_account
 
     setup_intent = if verify_with_microdeposits
                      create_mock_setup_intent(status: "requires_action")
@@ -182,7 +194,11 @@ module StripeMockHelpers
                      create_mock_setup_intent(status: "succeeded")
                    end
 
-    company.company_stripe_account.update!(
+    # Ensure subsequent calls to `Stripe::SetupIntent.retrieve` within model code
+    # return our constructed mock object for this setup intent. Be permissive on args.
+    allow(Stripe::SetupIntent).to receive(:retrieve).and_return(setup_intent)
+
+    company.bank_account.update!(
       setup_intent_id: setup_intent.id,
       status: verify_with_microdeposits ? CompanyStripeAccount::ACTION_REQUIRED : CompanyStripeAccount::READY,
       bank_account_last_four: "1234"
@@ -227,6 +243,26 @@ RSpec.configure do |config|
     # Skip VCR for tests using stripe-mock
     if ENV["CI"] || ENV["USE_STRIPE_MOCK"]
       example.metadata[:vcr] = nil if example.metadata[:vcr]
+
+      # Provide a permissive default stub for SetupIntent retrieval so tests
+      # that don't call helper setup still receive an expanded payment method.
+      allow(Stripe::SetupIntent).to receive(:retrieve) do |*args|
+        id = args.first.is_a?(String) ? args.first : "seti_mock"
+
+        # Build a PaymentMethod with us_bank_account last4 "6789"
+        payment_method = Stripe::PaymentMethod.construct_from(
+          StripeMockHelpers::STRIPE_TEST_DATA[:payment_methods][:us_bank_account]
+        )
+
+        # Construct a default SetupIntent as 'succeeded' (no further action required).
+        # Tests that need 'requires_action' should override this via helper methods.
+        Stripe::SetupIntent.construct_from(
+          id: id,
+          object: "setup_intent",
+          status: "succeeded",
+          payment_method: payment_method
+        )
+      end
     end
   end
 

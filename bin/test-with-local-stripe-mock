@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+set -e
+
+# Colors for better output
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print messages with colors
+print_message() {
+  local color=$1
+  local message=$2
+  echo -e "${color}${message}${NC}"
+}
+
+# Function to print error messages and exit
+error_exit() {
+  print_message "${RED}" "ERROR: $1"
+  exit 1
+}
+
+# Variables
+STRIPE_MOCK_PID=""
+STRIPE_MOCK_PORT=12111
+STRIPE_MOCK_HTTPS_PORT=12112
+
+# Function to clean up resources
+cleanup() {
+  print_message "${BLUE}" "Cleaning up resources..."
+  if [ -n "$STRIPE_MOCK_PID" ]; then
+    kill "$STRIPE_MOCK_PID" > /dev/null 2>&1 || true
+    print_message "${GREEN}" "✓ Stopped stripe-mock process (PID: $STRIPE_MOCK_PID)"
+  fi
+}
+
+# Set up trap to clean up on exit
+trap cleanup EXIT INT TERM
+
+# Function to check if a command exists
+command_exists() {
+  command -v "$1" &> /dev/null
+}
+
+# Function to check if stripe-mock is installed
+check_stripe_mock() {
+  if command_exists stripe-mock; then
+    print_message "${GREEN}" "✓ stripe-mock is installed"
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Function to install stripe-mock
+install_stripe_mock() {
+  print_message "${BLUE}" "stripe-mock not found. Attempting to install..."
+
+  if command_exists go; then
+    print_message "${BLUE}" "Installing stripe-mock using Go..."
+    go install github.com/stripe/stripe-mock@latest
+    if [ $? -eq 0 ]; then
+      print_message "${GREEN}" "✓ Successfully installed stripe-mock using Go"
+      # Add Go bin directory to PATH if it's not already there
+      if [[ ":$PATH:" != *":$HOME/go/bin:"* ]]; then
+        export PATH="$PATH:$HOME/go/bin"
+        print_message "${YELLOW}" "Added $HOME/go/bin to PATH for this session"
+        print_message "${YELLOW}" "To make this permanent, add 'export PATH=\$PATH:\$HOME/go/bin' to your shell profile"
+      fi
+      return 0
+    fi
+  fi
+
+  if command_exists brew; then
+    print_message "${BLUE}" "Installing stripe-mock using Homebrew..."
+    brew install stripe/stripe-mock/stripe-mock
+    if [ $? -eq 0 ]; then
+      print_message "${GREEN}" "✓ Successfully installed stripe-mock using Homebrew"
+      return 0
+    fi
+  fi
+
+  print_message "${RED}" "Failed to install stripe-mock automatically."
+  print_message "${YELLOW}" "Please install stripe-mock manually using one of the following methods:"
+  print_message "${YELLOW}" "  1. Go: go install github.com/stripe/stripe-mock@latest"
+  print_message "${YELLOW}" "  2. Homebrew: brew install stripe/stripe-mock/stripe-mock"
+  print_message "${YELLOW}" "  3. Download from: https://github.com/stripe/stripe-mock/releases"
+  return 1
+}
+
+# Print welcome message
+print_message "${GREEN}" "
+╔════════════════════════════════════════════════╗
+║        Flexile Test With Local Stripe Mock     ║
+║     Run tests with Stripe & Wise API mocks     ║
+╚════════════════════════════════════════════════╝"
+
+# Check if stripe-mock is installed, install if not
+if ! check_stripe_mock; then
+  if ! install_stripe_mock; then
+    error_exit "stripe-mock is required to run tests with mocks"
+  fi
+fi
+
+# Check again if stripe-mock is installed
+if ! check_stripe_mock; then
+  error_exit "stripe-mock installation was not successful"
+fi
+
+# Get stripe-mock version
+STRIPE_MOCK_VERSION=$(stripe-mock --version 2>&1 || echo "unknown")
+print_message "${GREEN}" "✓ Using stripe-mock version: $STRIPE_MOCK_VERSION"
+
+# Start stripe-mock in the background
+print_message "${BLUE}" "Starting stripe-mock server on port $STRIPE_MOCK_PORT (HTTP) and $STRIPE_MOCK_HTTPS_PORT (HTTPS)..."
+stripe-mock -http-port $STRIPE_MOCK_PORT -https-port $STRIPE_MOCK_HTTPS_PORT > /dev/null 2>&1 &
+STRIPE_MOCK_PID=$!
+
+if [ -z "$STRIPE_MOCK_PID" ]; then
+  error_exit "Failed to start stripe-mock server."
+fi
+
+print_message "${GREEN}" "✓ Started stripe-mock server with PID: $STRIPE_MOCK_PID"
+
+# Wait for stripe-mock to be ready
+print_message "${BLUE}" "Waiting for stripe-mock to be ready..."
+max_attempts=10
+attempt=1
+while ! curl -s http://localhost:$STRIPE_MOCK_PORT/v1/customers > /dev/null; do
+  if [ $attempt -gt $max_attempts ]; then
+    error_exit "stripe-mock failed to start after $max_attempts attempts."
+  fi
+  print_message "${YELLOW}" "  Waiting for stripe-mock to be ready (attempt $attempt/$max_attempts)..."
+  sleep 1
+  ((attempt++))
+done
+
+print_message "${GREEN}" "✓ stripe-mock is ready at http://localhost:$STRIPE_MOCK_PORT"
+
+# Prepare environment variables for testing
+export USE_STRIPE_MOCK=true
+export USE_WISE_MOCK=true
+export STRIPE_MOCK_HOST=localhost
+export STRIPE_MOCK_PORT=$STRIPE_MOCK_PORT
+export STRIPE_MOCK_PROTOCOL=http
+
+# Change to the backend directory
+cd "$(dirname "$0")/../backend" || error_exit "Could not change to backend directory."
+
+# Parse command line arguments
+TEST_FILES=""
+if [ $# -gt 0 ]; then
+  TEST_FILES="$*"
+  print_message "${BLUE}" "Running specific tests: $TEST_FILES"
+else
+  print_message "${BLUE}" "Running all tests with mocks..."
+fi
+
+# Run the tests
+print_message "${BLUE}" "Starting tests with Stripe & Wise mocks..."
+print_message "${YELLOW}" "USE_STRIPE_MOCK=${USE_STRIPE_MOCK}"
+print_message "${YELLOW}" "USE_WISE_MOCK=${USE_WISE_MOCK}"
+print_message "${YELLOW}" "STRIPE_MOCK_HOST=${STRIPE_MOCK_HOST}"
+print_message "${YELLOW}" "STRIPE_MOCK_PORT=${STRIPE_MOCK_PORT}"
+
+if [ -z "$TEST_FILES" ]; then
+  bundle exec rspec
+else
+  bundle exec rspec $TEST_FILES
+fi
+
+TEST_EXIT_CODE=$?
+
+# Print results
+if [ $TEST_EXIT_CODE -eq 0 ]; then
+  print_message "${GREEN}" "
+╔════════════════════════════════════════════════╗
+║                Tests Passed! 🎉                ║
+╚════════════════════════════════════════════════╝"
+else
+  print_message "${RED}" "
+╔════════════════════════════════════════════════╗
+║               Tests Failed! ❌                 ║
+╚════════════════════════════════════════════════╝"
+fi
+
+print_message "${BLUE}" "
+To run tests with local stripe-mock manually:
+
+  1. Start stripe-mock:
+     stripe-mock -http-port $STRIPE_MOCK_PORT -https-port $STRIPE_MOCK_HTTPS_PORT
+
+  2. Run tests with environment variables:
+     USE_STRIPE_MOCK=true USE_WISE_MOCK=true bundle exec rspec
+
+  3. Or use this script again:
+     bin/test-with-local-stripe-mock [specific_test_files]"
+
+exit $TEST_EXIT_CODE
