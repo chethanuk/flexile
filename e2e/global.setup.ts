@@ -1,9 +1,8 @@
 import { test as setup } from "@playwright/test";
 import { db } from "@test/db";
-import { startServer } from "./mocks/server";
-
 import { sql } from "drizzle-orm";
 import { documentTemplates } from "@/db/schema";
+import { startServer } from "./mocks/server";
 
 setup.describe.configure({ mode: "serial" });
 
