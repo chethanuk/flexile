@@ -13,13 +13,17 @@
 # Default database connection for tests
 DB_URL ?= postgresql://$(USER)@127.0.0.1:5432/flexile_test
 
-# Test environment variables
+# Required environment variables for tests
 TEST_ENV = RAILS_ENV=test \
            DATABASE_URL="$(DB_URL)" \
            USE_STRIPE_MOCK=true \
            USE_WISE_MOCK=true \
            WISE_PROFILE_ID=local_test \
-           WISE_API_KEY=local_test
+           WISE_API_KEY=local_test \
+           ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=dummy_primary_key_please_change \
+           ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=dummy_deterministic_key_please_change \
+           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=dummy_key_derivation_salt \
+           SECRET_KEY_BASE=dummy_secret_key_base_for_tests
 
 # Colors for better output
 BLUE := \033[1;34m

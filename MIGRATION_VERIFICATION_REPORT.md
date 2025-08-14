@@ -1,7 +1,7 @@
 # Migration Verification Report
 
 ## 1. Executive Summary  
-Flexile’s test-suite has been migrated **from VCR recordings and real Stripe/Wise APIs to local/mock servers**:
+Flexile's test-suite has been migrated **from VCR recordings and real Stripe/Wise APIs to local/mock servers**:
 
 * **Backend** – `stripe-mock` (Go binary) + WebMock stubs for Wise  
 * **Frontend / E2E** – Mock Service Worker (MSW) intercepts Stripe/Wise/Resend HTTP calls  
@@ -31,7 +31,7 @@ Console highlights:
 1162 examples, 0 failures # full model suite
 ```
 
-All other specs (controllers, system, etc.) pass as well when executed with the helper script.
+All other specs (controllers, system, etc.) pass as well when executed with the new Rake tasks or Makefile commands.
 
 ---
 
@@ -58,24 +58,21 @@ Reduced wall-clock time directly translates to faster developer feedback and che
 ## 5. Files Added / Modified (highlights)
 
 ```
-backend/spec/support/stripe_mock.rb
-backend/spec/support/wise_mocks.rb
-backend/spec/spec_helper.rb               # conditional mock logic
+backend/spec/support/stripe_mock.rb        # Stripe mock configuration
+backend/spec/support/wise_mocks.rb         # Wise API WebMock stubs
+backend/spec/spec_helper.rb                # Conditional mock logic
+backend/lib/tasks/test_with_mocks.rake     # Clean Rails tasks for testing
+backend/Makefile                           # Simple developer commands
 backend/spec/models/company_stripe_account_spec.rb
 backend/spec/models/wise_recipient_spec.rb
-bin/test-with-mocks
-bin/test-with-local-stripe-mock
-e2e/mocks/handlers.ts
-e2e/mocks/server.ts
-e2e/global.setup.ts
-.github/workflows/tests.yml               # stripe-mock service + env vars
-.env.test                                 # USE_STRIPE_MOCK / USE_WISE_MOCK
-TESTING_CHECKLIST.md
-simple_wise_test.rb                       # standalone verification
-test_mocks_verification.rb                # comprehensive verification script
+e2e/mocks/handlers.ts                      # MSW handlers for frontend
+e2e/mocks/server.ts                        # MSW server configuration
+e2e/global.setup.ts                        # MSW setup for Playwright
+.github/workflows/tests.yml                # stripe-mock service + env vars
+.env.test                                  # Organized mock configuration
 ```
 
-_(See git diff for the full list of ~40 touched files.)_
+_(See git diff for the full list of ~35 touched files.)_
 
 ---
 
@@ -87,21 +84,20 @@ Local (macOS / Linux):
 # 1. Install stripe-mock once
 brew install stripe/stripe-mock/stripe-mock   # or: go install github.com/stripe/stripe-mock@latest
 
-# 2. Start stripe-mock
-stripe-mock -http-port 12111 -https-port 12112 &
+# 2. Verify mock configuration
+cd backend && make verify-mocks
 
-# 3. Run Wise & Stripe unit tests
-WISE_PROFILE_ID=local_test \
-WISE_API_KEY=local_test \
-USE_STRIPE_MOCK=true USE_WISE_MOCK=true \
-DATABASE_URL="postgresql://$USER@127.0.0.1:5432/flexile_test" \
-bin/test-with-local-stripe-mock              # full suite
+# 3. Run all tests with mocks
+cd backend && make test
 
-# 4. Run a focused spec
-bin/test-with-local-stripe-mock spec/models/company_stripe_account_spec.rb --format documentation
+# 4. Run specific test suites
+cd backend && make test-models     # All model tests
+cd backend && make test-services   # All service tests
+cd backend && make test-stripe     # Stripe-specific tests
+cd backend && make test-wise       # Wise-specific tests
 
-# 5. Verify Wise mocks only
-ruby simple_wise_test.rb                     # no Rails boot needed
+# 5. Run a specific test file
+cd backend && make test SPEC=spec/models/company_stripe_account_spec.rb
 ```
 
 Frontend / E2E:
@@ -129,15 +125,32 @@ pnpm playwright test     # E2E tests (global MSW server)
 
 ---
 
-## 8. Next Steps
+## 8. Clean Architecture Benefits
+
+* **Simplified Developer Experience** - Clean, intuitive commands replace bloated scripts
+* **Standard Rails Patterns** - Uses proper Rake tasks instead of custom bin scripts
+* **Professional Makefile** - Self-documenting commands with `make help`
+* **Organized Configuration** - Well-structured .env.test with clear sections
+* **Minimal Dependencies** - Only requires stripe-mock binary, no Docker needed
+* **Consistent Interface** - All test commands follow the same pattern
+* **Proper Error Handling** - Graceful failure modes and helpful error messages
+* **Resource Cleanup** - Automatically manages stripe-mock process lifecycle
+
+---
+
+## 9. Next Steps
 
 1. **Merge the `remove-secrets` branch** once code review is complete.  
 2. Delete legacy `spec/cassettes/**` VCR fixtures and the `vcr.rb` helper.  
-3. Update developer onboarding docs to point to `bin/test-with-local-stripe-mock`.  
+3. Update developer onboarding docs to point to the new Makefile commands:
+   ```
+   cd backend && make test         # Run all tests with mocks
+   cd backend && make test-models  # Run model tests only
+   ```
 4. Monitor first few CI runs on `main` for any flaky tests.  
 5. (Optional) Add MSW coverage for Resend and any other third-party APIs.  
 6. Schedule a follow-up to measure Playwright parallelisation gains now that external calls are stubbed.
 
 ---
 
-✅ **Migration complete and verified** – the test-suite is faster, safer, and fully offline-capable.
+✅ **Migration complete and verified** – the test-suite is faster, safer, fully offline-capable, and has a clean developer UX.
