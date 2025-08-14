@@ -186,11 +186,11 @@ RSpec.describe CompanyStripeAccount do
         # The mock data in StripeMockHelpers has a dynamic arrival_date (Time.now + 2.days)
         # and "descriptor_code" as the microdeposit_type
         verification_details = company_stripe_account.reload.microdeposit_verification_details
-        
+
         expect(verification_details[:microdeposit_type]).to eq("descriptor_code")
         expect(verification_details[:bank_account_number]).to eq("****1234")
         expect(verification_details[:arrival_timestamp]).to be_present
-        
+
         # The timestamp should be approximately 2 days from now (within 5 seconds)
         expected_timestamp = Time.now.to_i + 2.days.to_i
         expect(verification_details[:arrival_timestamp]).to be_within(5).of(expected_timestamp)

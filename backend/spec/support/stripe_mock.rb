@@ -27,22 +27,22 @@ module StripeMockHelpers
           bank_name: "STRIPE TEST BANK",
           fingerprint: "FFDMA0jJDFjDf0aS",
           last4: "6789",
-          routing_number: "110000000"
-        }
-      }
+          routing_number: "110000000",
+        },
+      },
     },
     setup_intents: {
       requires_payment_method: {
         id: "seti_mock_requires_payment_method",
         object: "setup_intent",
         client_secret: "seti_mock_requires_payment_method_secret_test",
-        status: "requires_payment_method"
+        status: "requires_payment_method",
       },
       requires_confirmation: {
         id: "seti_mock_requires_confirmation",
         object: "setup_intent",
         client_secret: "seti_mock_requires_confirmation_secret_test",
-        status: "requires_confirmation"
+        status: "requires_confirmation",
       },
       requires_action: {
         id: "seti_mock_requires_action",
@@ -54,17 +54,17 @@ module StripeMockHelpers
           verify_with_microdeposits: {
             arrival_date: Time.now.to_i + 2.days.to_i,
             hosted_verification_url: "https://payments.stripe.com/verification/microdeposits/test_mock",
-            microdeposit_type: "descriptor_code"
-          }
-        }
+            microdeposit_type: "descriptor_code",
+          },
+        },
       },
       succeeded: {
         id: "seti_mock_succeeded",
         object: "setup_intent",
         client_secret: "seti_mock_succeeded_secret_test",
         status: "succeeded",
-        payment_method: "pm_test_us_bank_account"
-      }
+        payment_method: "pm_test_us_bank_account",
+      },
     },
     payment_intents: {
       requires_payment_method: {
@@ -73,7 +73,7 @@ module StripeMockHelpers
         client_secret: "pi_mock_requires_payment_method_secret_test",
         status: "requires_payment_method",
         amount: 1000,
-        currency: "usd"
+        currency: "usd",
       },
       succeeded: {
         id: "pi_mock_succeeded",
@@ -82,8 +82,8 @@ module StripeMockHelpers
         status: "succeeded",
         amount: 1000,
         currency: "usd",
-        payment_method: "pm_test_us_bank_account"
-      }
+        payment_method: "pm_test_us_bank_account",
+      },
     },
     events: {
       setup_intent_succeeded: {
@@ -95,9 +95,9 @@ module StripeMockHelpers
             id: "seti_mock_succeeded",
             object: "setup_intent",
             status: "succeeded",
-            payment_method: "pm_test_us_bank_account"
-          }
-        }
+            payment_method: "pm_test_us_bank_account",
+          },
+        },
       },
       payment_intent_succeeded: {
         id: "evt_mock_payment_intent_succeeded",
@@ -109,11 +109,11 @@ module StripeMockHelpers
             object: "payment_intent",
             status: "succeeded",
             amount: 1000,
-            currency: "usd"
-          }
-        }
-      }
-    }
+            currency: "usd",
+          },
+        },
+      },
+    },
   }.freeze
 
   # Helper method to create a setup intent via the mock server
@@ -189,10 +189,10 @@ module StripeMockHelpers
     return unless company.bank_account
 
     setup_intent = if verify_with_microdeposits
-                     create_mock_setup_intent(status: "requires_action")
-                   else
-                     create_mock_setup_intent(status: "succeeded")
-                   end
+      create_mock_setup_intent(status: "requires_action")
+    else
+      create_mock_setup_intent(status: "succeeded")
+    end
 
     # Ensure subsequent calls to `Stripe::SetupIntent.retrieve` within model code
     # return our constructed mock object for this setup intent. Be permissive on args.
@@ -219,12 +219,12 @@ RSpec.configure do |config|
     if ENV["CI"] || ENV["USE_STRIPE_MOCK"]
       # Point Stripe to the mock server
       Stripe.api_base = "http://localhost:12111"
-      
+
       # Set a dummy API key since we're not making real API calls
       Stripe.api_key = "sk_test_mock"
-      
+
       puts "🔌 Stripe configured to use stripe-mock server at #{Stripe.api_base}"
-      
+
       # Verify the mock server is running
       begin
         Stripe::Account.retrieve("acct_default")
@@ -270,15 +270,15 @@ RSpec.configure do |config|
   config.around(:each, :use_real_stripe) do |example|
     original_api_base = Stripe.api_base
     original_api_key = Stripe.api_key
-    
+
     # Restore real Stripe configuration for this test
     if ENV["CI"] || ENV["USE_STRIPE_MOCK"]
       Stripe.api_base = "https://api.stripe.com"
       Stripe.api_key = ENV["STRIPE_SECRET_KEY"]
     end
-    
+
     example.run
-    
+
     # Restore mock configuration after the test
     if ENV["CI"] || ENV["USE_STRIPE_MOCK"]
       Stripe.api_base = original_api_base

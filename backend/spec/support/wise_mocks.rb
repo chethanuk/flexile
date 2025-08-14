@@ -6,7 +6,7 @@
 #
 # Usage:
 #   include WiseMocks
-#   
+#
 #   # In a test:
 #   setup_wise_mocks
 #   # Or for specific scenarios:
@@ -18,7 +18,7 @@ require "webmock/rspec"
 
 module WiseMocks
   # Base URL for Wise API sandbox
-  WISE_API_URL = "https://api.sandbox.transferwise.tech".freeze
+  WISE_API_URL = "https://api.sandbox.transferwise.tech"
 
   # Common test data for Wise objects
   WISE_TEST_DATA = {
@@ -37,8 +37,8 @@ module WiseMocks
         firstLine: "123 Test St",
         postCode: "12345",
         city: "San Francisco",
-        state: "CA"
-      }
+        state: "CA",
+      },
     },
     balance: {
       id: 12345,
@@ -47,18 +47,18 @@ module WiseMocks
       type: "STANDARD",
       amount: {
         value: 1000.00,
-        currency: "USD"
+        currency: "USD",
       },
       reservedAmount: {
         value: 0,
-        currency: "USD"
+        currency: "USD",
       },
       bankDetails: {
         accountHolderName: "Test User",
         accountNumber: "0000000000",
         sortCode: "000000",
-        bankName: "TEST BANK"
-      }
+        bankName: "TEST BANK",
+      },
     },
     recipient: {
       id: 148563324,
@@ -77,7 +77,7 @@ module WiseMocks
           firstLine: "456 Test Ave",
           postCode: "54321",
           city: "New York",
-          state: "NY"
+          state: "NY",
         },
         email: "sharang@example.com",
         legalType: "PRIVATE",
@@ -135,8 +135,8 @@ module WiseMocks
         taxId: nil,
         token: nil,
         town: nil,
-        transitNumber: nil
-      }
+        transitNumber: nil,
+      },
     },
     quote: {
       id: "099e335c-f53c-442f-9dab-e3ca96c2844e",
@@ -149,9 +149,9 @@ module WiseMocks
       user: 5940326,
       profile: 16421159,
       rateType: "FIXED",
-      rateExpirationTime: (Time.now + 1.day).iso8601,
+      rateExpirationTime: (Time.current + 1.day).iso8601,
       payOut: "BANK_TRANSFER",
-      status: "PENDING"
+      status: "PENDING",
     },
     transfer: {
       id: 50500593,
@@ -166,24 +166,24 @@ module WiseMocks
       business: nil,
       transferRequest: nil,
       details: {
-        reference: "Invoice Payment"
+        reference: "Invoice Payment",
       },
       hasActiveIssues: false,
       sourceCurrency: "USD",
       sourceValue: 100.00,
       targetCurrency: "USD",
       targetValue: 100.00,
-      customerTransactionId: "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6"
+      customerTransactionId: "a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6",
     },
     delivery_estimate: {
-      estimatedDeliveryDate: (Time.now + 2.days).iso8601
+      estimatedDeliveryDate: (Time.current + 2.days).iso8601,
     },
     exchange_rate: [
       {
         rate: 1.0,
         source: "USD",
         target: "USD",
-        time: Time.now.iso8601
+        time: Time.now.iso8601,
       }
     ],
     webhook: {
@@ -192,8 +192,8 @@ module WiseMocks
       trigger_on: "transfers#state-change",
       delivery: {
         version: "2.0.0",
-        url: "https://example.com/webhooks/wise/transfer_state_change"
-      }
+        url: "https://example.com/webhooks/wise/transfer_state_change",
+      },
     },
     account_requirements: [
       {
@@ -210,7 +210,7 @@ module WiseMocks
             maxLength: 8,
             validationRegexp: "^[0-9]{8}$",
             validationAsync: nil,
-            valuesAllowed: nil
+            valuesAllowed: nil,
           },
           {
             name: "Sort code",
@@ -222,11 +222,11 @@ module WiseMocks
             maxLength: 6,
             validationRegexp: "^[0-9]{6}$",
             validationAsync: nil,
-            valuesAllowed: nil
+            valuesAllowed: nil,
           }
-        ]
+        ],
       }
-    ]
+    ],
   }.freeze
 
   # Sets up all Wise API mocks with customizable options
@@ -251,7 +251,7 @@ module WiseMocks
     balance_data[:amount][:currency] = currency
 
     # Mock exchange rate endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v1/rates})
+    stub_request(:get, %r{#{WISE_API_URL}/v1/rates}o)
       .to_return(
         status: 200,
         body: WISE_TEST_DATA[:exchange_rate].to_json,
@@ -267,7 +267,7 @@ module WiseMocks
       )
 
     # Mock get quote endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v3/profiles/.+/quotes/.+})
+    stub_request(:get, %r{#{WISE_API_URL}/v3/profiles/.+/quotes/.+}o)
       .to_return(
         status: 200,
         body: WISE_TEST_DATA[:quote].to_json,
@@ -275,7 +275,7 @@ module WiseMocks
       )
 
     # Mock create quote endpoint
-    stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/quotes})
+    stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/quotes}o)
       .to_return(
         status: 200,
         body: WISE_TEST_DATA[:quote].to_json,
@@ -291,7 +291,7 @@ module WiseMocks
       )
 
     # Mock get recipient account endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v1/accounts/\d+})
+    stub_request(:get, %r{#{WISE_API_URL}/v1/accounts/\d+}o)
       .to_return(
         status: 200,
         body: WISE_TEST_DATA[:recipient].to_json,
@@ -299,7 +299,7 @@ module WiseMocks
       )
 
     # Mock delete recipient account endpoint
-    stub_request(:delete, %r{#{WISE_API_URL}/v1/accounts/\d+})
+    stub_request(:delete, %r{#{WISE_API_URL}/v1/accounts/\d+}o)
       .to_return(
         status: 200,
         body: "".to_json,
@@ -325,7 +325,7 @@ module WiseMocks
       )
 
     # Mock fund transfer endpoint
-    stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/transfers/.+/payments})
+    stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/transfers/.+/payments}o)
       .to_return(
         status: 200,
         body: { type: "BALANCE" }.to_json,
@@ -333,7 +333,7 @@ module WiseMocks
       )
 
     # Mock get transfer endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v1/transfers/\d+})
+    stub_request(:get, %r{#{WISE_API_URL}/v1/transfers/\d+}o)
       .to_return(
         status: 200,
         body: transfer_data.to_json,
@@ -341,7 +341,7 @@ module WiseMocks
       )
 
     # Mock delivery estimate endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v1/delivery-estimates/\d+})
+    stub_request(:get, %r{#{WISE_API_URL}/v1/delivery-estimates/\d+}o)
       .to_return(
         status: 200,
         body: WISE_TEST_DATA[:delivery_estimate].to_json,
@@ -349,7 +349,7 @@ module WiseMocks
       )
 
     # Mock get balances endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v4/profiles/.+/balances})
+    stub_request(:get, %r{#{WISE_API_URL}/v4/profiles/.+/balances}o)
       .to_return(
         status: 200,
         body: [balance_data].to_json,
@@ -357,7 +357,7 @@ module WiseMocks
       )
 
     # Mock create webhook endpoint
-    stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/subscriptions})
+    stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/subscriptions}o)
       .to_return(
         status: 200,
         body: WISE_TEST_DATA[:webhook].to_json,
@@ -365,7 +365,7 @@ module WiseMocks
       )
 
     # Mock get webhooks endpoint
-    stub_request(:get, %r{#{WISE_API_URL}/v3/profiles/.+/subscriptions})
+    stub_request(:get, %r{#{WISE_API_URL}/v3/profiles/.+/subscriptions}o)
       .to_return(
         status: 200,
         body: [WISE_TEST_DATA[:webhook]].to_json,
@@ -373,7 +373,7 @@ module WiseMocks
       )
 
     # Mock delete webhook endpoint
-    stub_request(:delete, %r{#{WISE_API_URL}/v3/profiles/.+/subscriptions/.+})
+    stub_request(:delete, %r{#{WISE_API_URL}/v3/profiles/.+/subscriptions/.+}o)
       .to_return(
         status: 200,
         body: "".to_json,
@@ -381,14 +381,14 @@ module WiseMocks
       )
 
     # Mock simulation endpoints
-    stub_request(:get, %r{#{WISE_API_URL}/v1/simulation/transfers/.+/funds_converted})
+    stub_request(:get, %r{#{WISE_API_URL}/v1/simulation/transfers/.+/funds_converted}o)
       .to_return(
         status: 200,
         body: { success: true }.to_json,
         headers: { "Content-Type" => "application/json" }
       )
 
-    stub_request(:get, %r{#{WISE_API_URL}/v1/simulation/transfers/.+/outgoing_payment_sent})
+    stub_request(:get, %r{#{WISE_API_URL}/v1/simulation/transfers/.+/outgoing_payment_sent}o)
       .to_return(
         status: 200,
         body: { success: true }.to_json,
@@ -403,7 +403,7 @@ module WiseMocks
       )
 
     # Mock create USD balance endpoint
-    stub_request(:post, %r{#{WISE_API_URL}/v4/profiles/.+/balances})
+    stub_request(:post, %r{#{WISE_API_URL}/v4/profiles/.+/balances}o)
       .to_return(
         status: 200,
         body: balance_data.to_json,
@@ -418,13 +418,13 @@ module WiseMocks
       errors: [
         {
           code: "GENERAL_ERROR",
-          message: "An unexpected error occurred"
+          message: "An unexpected error occurred",
         }
-      ]
+      ],
     }
 
     # Mock all endpoints to return errors
-    stub_request(:any, /#{WISE_API_URL}/)
+    stub_request(:any, /#{WISE_API_URL}/o)
       .to_return(
         status: 500,
         body: error_response.to_json,
@@ -441,13 +441,13 @@ module WiseMocks
         errors: [
           {
             code: "BALANCE_FUNDS_REQUIRED",
-            message: "Not enough funds in the account"
+            message: "Not enough funds in the account",
           }
-        ]
+        ],
       }
 
       # Mock fund transfer to fail with insufficient funds
-      stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/transfers/.+/payments})
+      stub_request(:post, %r{#{WISE_API_URL}/v3/profiles/.+/transfers/.+/payments}o)
         .to_return(
           status: 422,
           body: error_response.to_json,
@@ -463,11 +463,11 @@ module WiseMocks
             fields: [
               {
                 name: "accountNumber",
-                message: "Account number is invalid"
+                message: "Account number is invalid",
               }
-            ]
+            ],
           }
-        ]
+        ],
       }
 
       # Mock recipient creation to fail with validation error
@@ -480,7 +480,7 @@ module WiseMocks
 
     when :rate_limit_exceeded
       # Mock rate limit error
-      stub_request(:any, /#{WISE_API_URL}/)
+      stub_request(:any, /#{WISE_API_URL}/o)
         .to_return(
           status: 429,
           body: { error: "Too many requests" }.to_json,
@@ -488,7 +488,7 @@ module WiseMocks
             "Content-Type" => "application/json",
             "X-RateLimit-Limit" => "60",
             "X-RateLimit-Remaining" => "0",
-            "X-RateLimit-Reset" => (Time.now + 60).to_i.to_s
+            "X-RateLimit-Reset" => (Time.current + 60).to_i.to_s,
           }
         )
     end
@@ -519,7 +519,7 @@ module WiseMocks
     balance_data[:amount][:value] = balance
     balance_data[:amount][:currency] = currency
 
-    stub_request(:get, %r{#{WISE_API_URL}/v4/profiles/.+/balances})
+    stub_request(:get, %r{#{WISE_API_URL}/v4/profiles/.+/balances}o)
       .to_return(
         status: 200,
         body: [balance_data].to_json,
@@ -537,7 +537,7 @@ module WiseMocks
       subscription_id: "subscription-id-123456",
       event_type: event_type,
       schema_version: "2.0.0",
-      sent_at: Time.now.iso8601
+      sent_at: Time.now.iso8601,
     }
   end
 end

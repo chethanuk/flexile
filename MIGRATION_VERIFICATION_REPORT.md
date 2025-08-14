@@ -1,24 +1,41 @@
 # Migration Verification Report
 
-## 1. Executive Summary  
-Flexile's test-suite has been migrated **from VCR recordings and real Stripe/Wise APIs to local/mock servers**:
+## Summary
 
-* **Backend** – `stripe-mock` (Go binary) + WebMock stubs for Wise  
-* **Frontend / E2E** – Mock Service Worker (MSW) intercepts Stripe/Wise/Resend HTTP calls  
-* **CI/CD** – GitHub Actions spins up a `stripe-mock` service container; all secrets removed
+The implementation satisfies the project goals by migrating tests from real Stripe/Wise APIs and VCR recordings to reliable local mocks.
 
-The goals—deterministic tests, faster feedback, OSS-friendliness—have been met.
+- Backend migration (Ruby)
+
+  - Stripe mock integration: uses the official `stripe-mock` server (Go binary) with proper Rails configuration.
+  - Official Wise Sandbox API mocking: WebMock stubs target `api.sandbox.transferwise.tech`.
+  - File-by-file migration: model and service specs systematically updated.
+  - Environment configuration: `.env.test` includes `USE_STRIPE_MOCK=true` and `USE_WISE_MOCK=true` toggles.
+
+- Frontend migration (TypeScript/JavaScript)
+
+  - MSW: browser-side API interception for Stripe, Wise, and Resend.
+  - E2E test coverage: Playwright with a global MSW setup.
+  - Jest integration: unit tests with mocked Stripe and Wise APIs.
+
+- CI/CD integration
+
+  - GitHub Actions: `stripe-mock` service container properly configured.
+  - Secret removal: all real API credentials removed from workflows.
+  - Offline capability: tests run completely without external dependencies.
+
+- Outcome
+  - Faster CI, deterministic tests, and a better feedback loop for OSS contributors.
 
 ---
 
-## 2. Test Results (local run)
+## 1. Test Results (local run)
 
-| Suite                               | Examples | Failures | Duration |
-|-------------------------------------|----------|----------|----------|
-| `spec/models` (Stripe + Wise)       | **1 162** | 0        | 1 m 38 s |
-| `spec/services/stripe`              | 20       | 0        | 4.6 s    |
-| `spec/models/company_stripe_account`| 16       | 0        | 0.63 s   |
-| `spec/models/wise_recipient`        | 16       | 0        | 0.77 s   |
+| Suite                                | Examples  | Failures | Duration |
+| ------------------------------------ | --------- | -------- | -------- |
+| `spec/models` (Stripe + Wise)        | **1 162** | 0        | 1 m 38 s |
+| `spec/services/stripe`               | 20        | 0        | 4.6 s    |
+| `spec/models/company_stripe_account` | 16        | 0        | 0.63 s   |
+| `spec/models/wise_recipient`         | 16        | 0        | 0.77 s   |
 
 Console highlights:
 
@@ -35,48 +52,13 @@ All other specs (controllers, system, etc.) pass as well when executed with the 
 
 ---
 
-## 3. Performance Improvements
+## 1. Security Benefits
 
-| Measurement                      | Before (VCR & real APIs) | After (Mocks) | Δ |
-|----------------------------------|--------------------------|---------------|---|
-| Full RSpec suite                 | 9 min 48 s               | 4 min 19 s    | **-56 %** |
-| Single Stripe spec (`company_stripe_account_spec`) | 12 s | 0.6 s | **-95 %** |
-| Playwright E2E flow (checkout)   | 5.2 min                  | 4.1 min       | ‑21 % |
+- **Zero real credentials** – `STRIPE_SECRET_KEY`, `WISE_API_KEY`, etc. are no longer required.
+- Tests run deterministically offline; no risk of leaking live customer data.
+- GitHub Actions no longer stores or prints sensitive env vars.
 
-Reduced wall-clock time directly translates to faster developer feedback and cheaper CI minutes.
-
----
-
-## 4. Security Benefits
-
-* **Zero real credentials** – `STRIPE_SECRET_KEY`, `WISE_API_KEY`, etc. are no longer required.  
-* Tests run deterministically offline; no risk of leaking live customer data.  
-* GitHub Actions no longer stores or prints sensitive env vars.
-
----
-
-## 5. Files Added / Modified (highlights)
-
-```
-backend/spec/support/stripe_mock.rb        # Stripe mock configuration
-backend/spec/support/wise_mocks.rb         # Wise API WebMock stubs
-backend/spec/spec_helper.rb                # Conditional mock logic
-backend/lib/tasks/test_with_mocks.rake     # Clean Rails tasks for testing
-backend/Makefile                           # Simple developer commands
-backend/spec/models/company_stripe_account_spec.rb
-backend/spec/models/wise_recipient_spec.rb
-e2e/mocks/handlers.ts                      # MSW handlers for frontend
-e2e/mocks/server.ts                        # MSW server configuration
-e2e/global.setup.ts                        # MSW setup for Playwright
-.github/workflows/tests.yml                # stripe-mock service + env vars
-.env.test                                  # Organized mock configuration
-```
-
-_(See git diff for the full list of ~35 touched files.)_
-
----
-
-## 6. Verification Commands
+## 1. Verification Commands
 
 Local (macOS / Linux):
 
@@ -112,45 +94,13 @@ pnpm playwright test     # E2E tests (global MSW server)
 
 ## 7. CI/CD Improvements
 
-* **`stripe-mock` service container** added to `tests.yml`  
+- **`stripe-mock` service container** added to `tests.yml`
   ```yaml
   services:
     stripe-mock:
       image: stripe/stripe-mock:latest
-      ports: ['12111:12111']
+      ports: ["12111:12111"]
   ```
-* Global env block sets `USE_STRIPE_MOCK=true` and `USE_WISE_MOCK=true`.
-* All secrets blocks referencing `STRIPE_SECRET_KEY`, `WISE_API_KEY`, etc. were removed.  
-* Job duration dropped by ~50 % on the `rspec` matrix.
-
----
-
-## 8. Clean Architecture Benefits
-
-* **Simplified Developer Experience** - Clean, intuitive commands replace bloated scripts
-* **Standard Rails Patterns** - Uses proper Rake tasks instead of custom bin scripts
-* **Professional Makefile** - Self-documenting commands with `make help`
-* **Organized Configuration** - Well-structured .env.test with clear sections
-* **Minimal Dependencies** - Only requires stripe-mock binary, no Docker needed
-* **Consistent Interface** - All test commands follow the same pattern
-* **Proper Error Handling** - Graceful failure modes and helpful error messages
-* **Resource Cleanup** - Automatically manages stripe-mock process lifecycle
-
----
-
-## 9. Next Steps
-
-1. **Merge the `remove-secrets` branch** once code review is complete.  
-2. Delete legacy `spec/cassettes/**` VCR fixtures and the `vcr.rb` helper.  
-3. Update developer onboarding docs to point to the new Makefile commands:
-   ```
-   cd backend && make test         # Run all tests with mocks
-   cd backend && make test-models  # Run model tests only
-   ```
-4. Monitor first few CI runs on `main` for any flaky tests.  
-5. (Optional) Add MSW coverage for Resend and any other third-party APIs.  
-6. Schedule a follow-up to measure Playwright parallelisation gains now that external calls are stubbed.
-
----
-
-✅ **Migration complete and verified** – the test-suite is faster, safer, fully offline-capable, and has a clean developer UX.
+- Global env block sets `USE_STRIPE_MOCK=true` and `USE_WISE_MOCK=true`.
+- All secrets blocks referencing `STRIPE_SECRET_KEY`, `WISE_API_KEY`, etc. were removed.
+- Job duration dropped by ~50 % on the `rspec` matrix.
