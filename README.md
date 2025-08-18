@@ -66,12 +66,12 @@ Likely caused by rails attempting to connect before Redis had fully started.
 # -----------------------------
 # 🧪 Testing (now mock-first)
 # -----------------------------
-# The entire test-suite now runs **without any external API keys**.  
+# The entire test-suite now runs **without any external API keys**.
 # We spin-up local mocks for Stripe and stub the Wise sandbox via WebMock; the
 # front-end uses MSW (Mock Service Worker).
 #
-# • Faster – no network latency  
-# • Deterministic – no flakey 3rd-party outages  
+# • Faster – no network latency
+# • Deterministic – no flakey 3rd-party outages
 # • OSS-friendly – contributors can run `rspec` & Playwright out-of-the-box
 
 Run all specs with mocks:
@@ -95,11 +95,6 @@ below):
 # Rails specs
 bundle exec rspec
 ```
-
-### How the mocking works
-* **Backend** – `stripe-mock` Docker container on `localhost:12111`,  
-  Wise HTTP calls intercepted via **WebMock** stubs.
-* **Frontend/E2E** – **MSW** intercepts browser & Node fetches.
 
 ### Opt-in to real APIs
 Occasionally you may wish to hit the real Stripe/Wise sandboxes:
@@ -143,7 +138,7 @@ Be mindful of rate-limits & credentials.
    ```
    </details>
 
-<details> 
+<details>
 <summary>Resend</summary>
 
 1. Create account at [resend.com](https://resend.com) and complete email verification
