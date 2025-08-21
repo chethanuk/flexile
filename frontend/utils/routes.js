@@ -119,9 +119,13 @@ const __jsr = (
     ];
     class UtilsClass {
         constructor() {
+            // Get domain from environment variables (similar to e2e configuration)
+            const domain = typeof process !== "undefined" && process.env?.NEXT_PUBLIC_DOMAIN || 
+                          typeof window !== "undefined" && window.location?.hostname || 
+                          "flexile.dev";
             this.configuration = {
                 prefix: "",
-                default_url_options: {"protocol":"https","host":"flexile.dev"},
+                default_url_options: {"protocol":"https","host":domain},
                 special_options_key: "toString",
                 serializer: null || this.default_serializer.bind(this),
             };

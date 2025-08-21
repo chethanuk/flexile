@@ -25,7 +25,8 @@ WORKDIR /app
 # Create non-root user for security
 RUN groupadd -g 1001 rails && \
     useradd -m -u 1001 -g rails rails && \
-    chown -R rails:rails /app
+    chown -R rails:rails /app && \
+    chown -R rails:rails /usr/local/bundle
 
 # Configure bundler for optimal development
 ENV BUNDLE_PATH="/usr/local/bundle" \
@@ -42,7 +43,8 @@ RUN --mount=type=cache,id=bundle,target=/usr/local/bundle/cache \
     gem install bundler:2.3.11 && \
     bundle config set --local path '/usr/local/bundle' && \
     bundle config set --local without 'production' && \
-    bundle install --jobs 4 --retry 3
+    bundle install --jobs 4 --retry 3 && \
+    chown -R rails:rails /usr/local/bundle
 
 # Install foreman for process management
 RUN gem install foreman
@@ -53,8 +55,10 @@ USER rails
 # Copy application code (will be overridden by volume mount in development)
 COPY --chown=rails:rails backend/ ./
 
-# Create necessary directories
-RUN mkdir -p tmp/pids tmp/cache tmp/sockets log storage
+# Create necessary directories with proper permissions
+RUN mkdir -p tmp/pids tmp/cache tmp/sockets log storage && \
+    chown -R rails:rails tmp log storage && \
+    chmod -R 755 tmp log storage
 
 # Expose ports for Rails server and debugging
 EXPOSE 3000 3001

@@ -37,3 +37,4 @@ certificates/flexile.dev
 certificates/api.flexile.dev
 certificates/minio.flexile.dev
 certificates/minio-console.flexile.dev
+certs.sh
