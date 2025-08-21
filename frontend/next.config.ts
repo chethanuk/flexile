@@ -17,8 +17,9 @@ const nextConfig: NextConfig = {
     typedRoutes: true,
     testProxy: true,
     serverActions: {
-      allowedOrigins: [process.env.DOMAIN, process.env.APP_DOMAIN].filter((x) => x),
+      allowedOrigins: [process.env.DOMAIN, process.env.APP_DOMAIN].filter((x): x is string => Boolean(x)),
     },
+    allowedDevOrigins: ["flexile.dev", "app.flexile.dev", "localhost:3001", "127.0.0.1:3001"],
   },
   images: {
     remotePatterns: [

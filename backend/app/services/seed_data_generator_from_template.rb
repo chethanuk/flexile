@@ -50,6 +50,7 @@ class SeedDataGeneratorFromTemplate
       GenerateContractorInvitationJob,
       ChargeConsolidatedInvoiceJob,
       PayInvoiceJob,
+      ActionMailer::MailDeliveryJob,
     ]
     SidekiqJobForcePerformInline.apply
 
