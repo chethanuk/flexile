@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.4
+# Next.js Development Dockerfile
+# Optimized for development with pnpm fetch and HMR support
+
+ARG NODE_VERSION=22
+FROM node:${NODE_VERSION}-alpine AS base
+
+# Install dependencies for building native modules
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git \
+    curl
+
+# Enable pnpm via corepack
+RUN corepack enable && \
+    corepack prepare pnpm@latest --activate
+
+# Set pnpm environment variables
+ENV PNPM_HOME="/pnpm" \
+    PATH="$PNPM_HOME:$PATH"
+
+# Create app directory
+WORKDIR /app
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S -u 1001 -G nodejs nextjs && \
+    chown -R nextjs:nodejs /app
+
+# Configure pnpm for optimal caching
+RUN pnpm config set store-dir /pnpm-store && \
+    pnpm config set package-import-method copy
+
+# Copy package files for dependency installation
+COPY --chown=nextjs:nodejs package.json pnpm-lock.yaml pnpm-workspace.yaml* ./
+COPY --chown=nextjs:nodejs patches/ ./patches/
+
+# pnpm fetch optimization (80% faster installs) with BuildKit cache mounts
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm fetch --frozen-lockfile
+
+# Install dependencies with cache (skip prepare script)
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --prefer-offline --ignore-scripts
+
+# Copy frontend package files
+# Frontend uses root package.json - no separate frontend package.json
+
+# Switch to non-root user
+USER nextjs
+
+# Copy application code (will be overridden by volume mount in development)
+COPY --chown=nextjs:nodejs . .
+
+# Create Next.js build directories
+RUN mkdir -p frontend/.next frontend/public
+
+# Expose Next.js development port
+EXPOSE 3001
+
+# Stay in root directory /app for pnpm workspace commands
+WORKDIR /app
+
+# Development environment variables for Docker
+ENV NODE_ENV=development \
+    NEXT_TELEMETRY_DISABLED=1 \
+    WATCHPACK_POLLING=true \
+    CHOKIDAR_USEPOLLING=true \
+    CHOKIDAR_INTERVAL=1000 \
+    NODE_OPTIONS="--max-old-space-size=2048" \
+    TZ=UTC
+
+# Health check disabled for development
+# HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+#     CMD curl -s http://localhost:3001/ -o /dev/null || exit 1
+
+# Development command matching Procfile.dev pattern
+CMD ["sh", "-c", "pnpm next dev frontend -H 0.0.0.0 -p 3001"]
